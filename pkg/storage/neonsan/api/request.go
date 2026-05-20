@@ -136,6 +136,7 @@ type CloneVolumeRequest struct {
 	TargetPool   string `json:"target_pool"`
 	TargetVol    string `json:"target_vol"`
 	Size         int64  `json:"size"`
+	LinkClone    bool   `json:"link_clone"`
 }
 
 type CloneVolumeResponse struct {
