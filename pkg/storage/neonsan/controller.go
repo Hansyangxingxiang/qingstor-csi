@@ -18,6 +18,7 @@ package neonsan
 
 import (
 	"errors"
+	"fmt"
 	"strconv"
 	"time"
 
@@ -51,7 +52,7 @@ func (v *neonsan) CreateVolume(volumeName string, requestSize int64, parameters 
 func (v *neonsan) CreateVolumeFromSnapshot(volumeName, snapshotID string, parameters map[string]string) (string, error) {
 	targetPoolName := GetPoolName(parameters)
 	sourcePoolName, sourceVolumeName, snapshotName := SplitSnapshotName(snapshotID)
-	err := v.cloneVolume(sourcePoolName, sourceVolumeName, snapshotName, targetPoolName, volumeName)
+	err := v.cloneVolume(sourcePoolName, sourceVolumeName, snapshotName, targetPoolName, volumeName, parameters["link_clone"] != "false")
 	if err != nil {
 		return "", err
 	}
@@ -61,7 +62,18 @@ func (v *neonsan) CreateVolumeFromSnapshot(volumeName, snapshotID string, parame
 func (v *neonsan) CreateVolumeByClone(volumeName, sourceVolumeID string, parameters map[string]string) (string, error) {
 	targetPoolName := GetPoolName(parameters)
 	sourcePoolName, sourceVolumeName := SplitVolumeName(sourceVolumeID)
-	err := v.cloneVolume(sourcePoolName, sourceVolumeName, "", targetPoolName, volumeName)
+
+	linkClone := parameters["link_clone"] == "true"
+	var snapshotName string
+	if linkClone {
+		snapshotName = fmt.Sprintf("csi-link-clone-%d", time.Now().Unix())
+		err := api.CreateSnapshot(v.confFile, sourcePoolName, sourceVolumeName, snapshotName)
+		if err != nil {
+			return "", err
+		}
+	}
+
+	err := v.cloneVolume(sourcePoolName, sourceVolumeName, snapshotName, targetPoolName, volumeName, linkClone)
 	if err != nil {
 		return "", err
 	}
@@ -140,7 +152,25 @@ func (v *neonsan) DeleteSnapshot(snapshotID string) error {
 	return api.DeleteSnapshot(v.confFile, poolName, volumeName, snapshotName)
 }
 
-func (v *neonsan) cloneVolume(sourcePoolName, sourceVolumeName, snapshotName, targetPoolName, targetVolumeName string) error {
+func (v *neonsan) cloneVolume(sourcePoolName, sourceVolumeName, snapshotName, targetPoolName, targetVolumeName string, linkClone bool) error {
+	if linkClone {
+		return v.linkCloneVolume(sourcePoolName, sourceVolumeName, snapshotName, targetPoolName, targetVolumeName)
+	}
+	return v.fullCloneVolume(sourcePoolName, sourceVolumeName, snapshotName, targetPoolName, targetVolumeName)
+}
+
+func (v *neonsan) linkCloneVolume(sourcePoolName, sourceVolumeName, snapshotName, targetPoolName, targetVolumeName string) error {
+	if snapshotName == "" {
+		return errors.New("link clone require a snapshot")
+	}
+	err := api.CloneVolume(v.confFile, sourcePoolName, sourceVolumeName, snapshotName, targetVolumeName, targetPoolName, true)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func (v *neonsan) fullCloneVolume(sourcePoolName, sourceVolumeName, snapshotName, targetPoolName, targetVolumeName string) error {
 	volumeForClone, err := api.GetVolumeForClone(v.confFile, sourcePoolName, sourceVolumeName)
 	if err != nil {
 		return err
@@ -160,7 +190,7 @@ func (v *neonsan) cloneVolume(sourcePoolName, sourceVolumeName, snapshotName, ta
 	if err != nil {
 		return err
 	}
-	err = api.CloneVolume(v.confFile, sourcePoolName, sourceVolumeName, snapshotName, targetVolumeName, targetPoolName)
+	err = api.CloneVolume(v.confFile, sourcePoolName, sourceVolumeName, snapshotName, targetVolumeName, targetPoolName, false)
 	if err != nil {
 		return err
 	}

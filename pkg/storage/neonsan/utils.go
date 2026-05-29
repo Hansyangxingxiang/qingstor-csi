@@ -68,8 +68,9 @@ func TuneUpParameter(parameter map[string]string) {
 	backward(parameter, scReplicaNameOld, "rep_count")
 	// set default if the parameter is empty
 	setDefaultIfEmpty(parameter, "rep_count", "1")
-	// delete unnecessary
+	// delete unnecessary keys that are only meaningful to CSI driver
 	delUnnecessary(parameter, "fsType")
+	delUnnecessary(parameter, "link_clone")
 }
 
 func backward(parameters map[string]string, oldKey, newKey string) {
